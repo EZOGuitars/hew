@@ -7,6 +7,7 @@
 
 import type { ReactNode } from 'react'
 import { toolAllowed } from '../preview'
+import { FilletActionButtons } from '../viewport/FilletActionButtons'
 import { ToolOptionsCard } from '../viewport/ToolOptionsCard'
 import { FilletOptions, type ProfileOptionSection } from '../viewport/FilletOptions'
 import type { ToolName } from './toolIcons'
@@ -26,7 +27,7 @@ const ALL_TOOL_PANELS: readonly ToolPanel[] = [
   {
     tool: 'Fillet',
     render: ({ profileSections }) => (
-      <ToolOptionsCard collapsible={false} tool="Fillet" info="Round or chamfer an edge, or give it another shape.">
+      <ToolOptionsCard footer={<FilletActionButtons />} collapsible={false} tool="Fillet" info="Round or chamfer an edge, or give it another shape.">
         <FilletOptions sections={profileSections} />
       </ToolOptionsCard>
     ),

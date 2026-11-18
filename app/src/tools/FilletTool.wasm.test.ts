@@ -10,13 +10,14 @@ import { fileURLToPath } from 'node:url'
 import * as THREE from 'three'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import init, { Scene } from '../wasm/pkg/wasm_api.js'
+import { SyncBlendPreviewer, type BlendPreviewRequest, type BlendPreviewResult } from './fillet/previewer'
 import { FilletTool, SLOW_PREVIEW_HINT, SLOW_PREVIEW_MS, type FilletHooks } from './FilletTool'
 import { i18n } from '@lingui/core'
 import { BUSY_REFUSED } from '../busyCard'
 import { arcSegments } from './arcMath'
 import { resolveHover } from './filletPick'
 import { clampBlendSegments } from './filletMath'
-import { resetFilletSettingsForTest, getFilletCornerOnly, getFilletMeasurementLabelOverride, getFilletSettings, setFilletProfile } from './filletSettings'
+import { resetFilletSettingsForTest, getFilletCornerOnly, getFilletMeasurementLabelOverride, getFilletSettings, setFilletProfile, setFilletCorners, setFilletSegmentsOverride } from './filletSettings'
 import type { Ray } from '../viewport/math'
 import { setLengthUnit, typedReadout } from '../settings/units'
 
@@ -2308,4 +2309,173 @@ describe('operation-owned Fillet dimension input', () => {
     expect(h.tool.dimension.snapshot().value).toBeCloseTo(0.0254)
   })
 
+})
+
+describe('Fillet card operation actions', () => {
+  function armed() {
+    const h = setup()
+    const box = makeBox(h.scene, 0.6, 0.1, 0.1)
+    click(h, down(0.3, 0.002), [100, 100])
+    for (const k of ['2', '0']) h.tool.onKey(key(k))
+    return { ...h, box }
+  }
+
+  it('Apply shares Enter completion, creates one history step, and ignores repeat/stale clicks', () => {
+    const a = armed()
+    const b = armed()
+    const depth = a.scene.undo_depth()
+    const state = a.tool.actions.snapshot()
+    expect(state.canApply).toBe(true)
+    a.tool.actions.perform('apply', state.identity)
+    b.tool.onKey(key('Enter'))
+    expect(a.scene.state_hash()).toBe(b.scene.state_hash())
+    expect(a.scene.undo_depth()).toBe(depth + 1)
+    expect(a.hooks.onCommit).toHaveBeenCalledTimes(1)
+    a.tool.actions.perform('apply', state.identity)
+    expect(a.hooks.onCommit).toHaveBeenCalledTimes(1)
+    expect(a.tool.actions.snapshot().canApply).toBe(false)
+    expect(a.tool.actions.snapshot().canCancel).toBe(false)
+    a.scene.scene_undo().free()
+    a.tool.onHistoryChanged()
+    expect(JSON.parse(a.scene.blend_features_json(a.box))).toHaveLength(0)
+  })
+
+  it('Cancel matches Escape cleanup, clears masks and preview, and writes no history', () => {
+    const a = armed()
+    const b = armed()
+    const hash = a.scene.state_hash(), depth = a.scene.undo_depth()
+    a.tool.actions.perform('cancel', a.tool.actions.snapshot().identity)
+    b.tool.onKey(key('Escape'))
+    expect(a.scene.state_hash()).toBe(hash)
+    expect(a.scene.state_hash()).toBe(b.scene.state_hash())
+    expect(a.scene.undo_depth()).toBe(depth)
+    expect(a.tool.hasArmedGesture()).toBe(false)
+    expect(a.tool.gizmoHandle()).toBeNull()
+    expect(a.hooks.clearFaceMask).toHaveBeenCalled()
+    expect(a.hooks.onMeasurement).toHaveBeenLastCalledWith('')
+    expect(a.tool.actions.snapshot().canCancel).toBe(false)
+    expect(a.hooks.onCommit).not.toHaveBeenCalled()
+  })
+
+  it('disables Apply for idle, incomplete input, facet commands, and an unfinished grip field', () => {
+    const h = setup()
+    expect(h.tool.actions.snapshot()).toMatchObject({ canApply: false, canCancel: false })
+    makeBox(h.scene, 0.6, 0.1, 0.1)
+    click(h, down(0.3, 0.002), [100, 100])
+    h.tool.onKey(key('-'))
+    expect(h.tool.actions.snapshot().canApply).toBe(false)
+    h.tool.onKey(key('Backspace'))
+    for (const k of ['2', '0']) h.tool.onKey(key(k))
+    h.tool.onKey(key('Tab'))
+    h.tool.onKey(key('5'))
+    const state = h.tool.actions.snapshot()
+    expect(state.canApply).toBe(false)
+    h.tool.actions.perform('apply', state.identity)
+    expect(h.hooks.onCommit).not.toHaveBeenCalled()
+    expect(h.tool.measurementLabel()).toBe('Stop')
+  })
+
+  it('slider release stays preview-only, and Apply preserves targeted variable-radius settings', () => {
+    const a = armed()
+    const b = armed()
+    for (const h of [a, b]) {
+      for (let i = 0; i < 3; i++) h.tool.onKey(key('Tab'))
+      expect(h.tool.dimension.snapshot().grip).toEqual({ kind: 'endRadius', end: 'start' })
+      const gesture = h.tool.dimension.begin(h.tool.dimension.snapshot().identity)!
+      expect(h.tool.actions.snapshot().canApply).toBe(false)
+      gesture.update(0.015)
+      expect(h.hooks.onCommit).not.toHaveBeenCalled()
+      gesture.finish()
+      expect(h.tool.dimension.snapshot().grip).toEqual({ kind: 'endRadius', end: 'start' })
+      expect(h.tool.actions.snapshot().canApply).toBe(true)
+    }
+    a.tool.actions.perform('apply', a.tool.actions.snapshot().identity)
+    b.tool.onKey(key('Enter'))
+    expect(a.scene.state_hash()).toBe(b.scene.state_hash())
+    expect(a.hooks.onCommit).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores action events from a cancelled operation after a fresh operation is armed', () => {
+    const h = armed()
+    const previous = h.tool.actions.snapshot()
+    h.tool.onKey(key('Escape'))
+    click(h, down(0.3, 0.002), [100, 100])
+    for (const k of ['2', '0']) h.tool.onKey(key(k))
+    h.tool.actions.perform('cancel', previous.identity)
+    h.tool.actions.perform('apply', previous.identity)
+    expect(h.tool.hasArmedGesture()).toBe(true)
+    expect(h.hooks.onCommit).not.toHaveBeenCalled()
+  })
+})
+
+
+it('card actions wait for accepted previews and late answers cannot revive a cancelled operation', async () => {
+  const base = setup()
+  makeBox(base.scene, 0.6, 0.1, 0.1)
+  const pending: Array<() => void> = []
+  const real = new SyncBlendPreviewer(base.scene, () => 0)
+  const previewer = {
+    request: (request: BlendPreviewRequest) => new Promise<BlendPreviewResult>(resolve => { pending.push(() => resolve(real.request(request))) }),
+    cancel: vi.fn(), dispose: vi.fn(),
+  }
+  const tool = new FilletTool(base.scene, base.group, base.hooks as unknown as FilletHooks, { previewer, schedule: cb => cb() })
+  const h = { ...base, tool }
+  click(h, down(0.3, 0.002), [100, 100])
+  expect(tool.actions.snapshot()).toMatchObject({ canApply: false, canCancel: true })
+  tool.actions.perform('cancel', tool.actions.snapshot().identity)
+  pending.splice(0).forEach(resolve => resolve())
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+  expect(tool.actions.snapshot()).toMatchObject({ canApply: false, canCancel: false })
+  click(h, down(0.3, 0.002), [100, 100])
+  expect(tool.actions.snapshot().canApply).toBe(false)
+  pending.splice(0).forEach(resolve => resolve())
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+  expect(tool.actions.snapshot().canApply).toBe(true)
+  expect(h.hooks.onCommit).not.toHaveBeenCalled()
+})
+
+
+it('card Apply also shares the existing-blend Enter resize path', () => {
+  const prepare = () => {
+    const h = setup()
+    const box = makeBox(h.scene, 1, 1, 0.5)
+    const edge = h.scene.pick_solid_edge(0.5, 0.004, 10, 0, 0, -1, 0.02)!
+    h.scene.blend_edges(box, JSON.stringify({ edges: [String(edge.edge())], profile: { kind: 'round', radius: 0.1, segments: 6 } }))
+    click(h, down(0.5, 0.03), [100, 100])
+    for (const k of ['2', '0']) h.tool.onKey(key(k))
+    return { ...h, box }
+  }
+  const a = prepare(), b = prepare()
+  expect(a.tool.actions.snapshot().canApply).toBe(true)
+  const depth = a.scene.undo_depth()
+  a.tool.actions.perform('apply', a.tool.actions.snapshot().identity)
+  b.tool.onKey(key('Enter'))
+  expect(a.scene.state_hash()).toBe(b.scene.state_hash())
+  expect(a.scene.undo_depth()).toBe(depth + 1)
+  expect(a.hooks.onCommit).toHaveBeenCalledTimes(1)
+})
+
+
+it('card settings redraw the armed kernel preview immediately without a viewport click', () => {
+  const h = setup()
+  makeBox(h.scene, 0.6, 0.1, 0.1)
+  click(h, down(0.3, 0.002), [100, 100])
+  for (const k of ['2', '0']) h.tool.onKey(key(k))
+  const preview = vi.spyOn(h.scene, 'blend_preview_typed')
+  setFilletProfile({ kind: 'chamfer' })
+  expect(preview).toHaveBeenCalled()
+  expect(JSON.parse(preview.mock.calls.at(-1)![1]).profile.kind).toBe('chamfer')
+  preview.mockClear()
+  setFilletProfile({ kind: 'round' })
+  expect(JSON.parse(preview.mock.calls.at(-1)![1]).profile.kind).toBe('round')
+  preview.mockClear()
+  setFilletSegmentsOverride(12)
+  expect(preview).toHaveBeenCalled()
+  expect(JSON.parse(preview.mock.calls.at(-1)![1]).profile.segments).toBe(12)
+  preview.mockClear()
+  setFilletCorners('mitered')
+  expect(preview).toHaveBeenCalled()
+  expect(JSON.parse(preview.mock.calls.at(-1)![1]).corners).toBe('mitered')
+  expect(h.tool.hasArmedGesture()).toBe(true)
+  expect(h.hooks.onCommit).not.toHaveBeenCalled()
 })

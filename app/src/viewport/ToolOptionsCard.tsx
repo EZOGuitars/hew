@@ -57,10 +57,11 @@ export interface ToolOptionsCardProps {
   info: string
   children: ReactNode
   collapsible?: boolean
+  footer?: ReactNode
 }
 
 /** Shared viewport chrome; it has no knowledge of a tool's settings. */
-export function ToolOptionsCard({ tool, info, children, collapsible = true }: ToolOptionsCardProps) {
+export function ToolOptionsCard({ tool, info, children, collapsible = true, footer }: ToolOptionsCardProps) {
   const [collapsed, setCollapsed] = useState(() => collapsible && (collapsedTools.get(tool) ?? false))
   const root = useRef<HTMLDivElement>(null)
   const rowsId = useId()
@@ -106,6 +107,7 @@ export function ToolOptionsCard({ tool, info, children, collapsible = true }: To
           }}>{collapsed ? '▸' : '▾'}</button>}
       </div>
       {(!collapsible || !collapsed) && <div id={rowsId} className="tool-options-body" style={{ padding: '0 12px 12px' }}>{children}</div>}
+      {footer !== undefined && <div className="tool-options-footer">{footer}</div>}
     </div>
   )
 }

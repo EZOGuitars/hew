@@ -53,6 +53,7 @@ import { PickStage } from './fillet/pick'
 import { SizeStage } from './fillet/size'
 import { PreviewStage } from './fillet/preview'
 import { CommitStage } from './fillet/commit'
+import { FilletActions, connectFilletActions, disconnectFilletActions } from './fillet/actions'
 import { FilletDimension } from './fillet/dimension'
 import { connectFilletDimension, disconnectFilletDimension } from './fillet/dimensionStore'
 import { EditStageOps } from './fillet/edit'
@@ -65,6 +66,7 @@ export class FilletTool implements Tool {
   readonly name = 'Fillet'
   private readonly c: FilletContext
   readonly dimension: FilletDimension
+  readonly actions: FilletActions
   private altHeld = false
   private pointerDuringAlt = false
 
@@ -94,12 +96,13 @@ export class FilletTool implements Tool {
     c.commit = new CommitStage(c)
     c.edit = new EditStageOps(c)
     this.dimension = new FilletDimension(c)
-    c.publishDimension = () => this.dimension.publish()
+    this.actions = new FilletActions(c, () => this.completeOperation(), () => this.escape())
+    c.publishDimension = () => { this.dimension.publish(); this.actions.publish() }
     c.dispatchPointerDown = (snap, ray) => this.onPointerDown(snap, ray)
     setFilletThreeWayCorners(0)
   }
 
-  activateDimension(): void { connectFilletDimension(this.dimension) }
+  activateDimension(): void { connectFilletDimension(this.dimension); connectFilletActions(this.actions) }
 
   statusHint(): string {
     const chamfer = getFilletSettings().profile.kind === 'chamfer'
@@ -372,6 +375,10 @@ export class FilletTool implements Tool {
   }
 
   onPointerDown(snap: Snap | null, ray: Ray): void {
+    try { this.pointerDown(snap, ray) } finally { this.c.publishDimension() }
+  }
+
+  private pointerDown(snap: Snap | null, ray: Ray): void {
     this.c.note = null
     // Activated from the rail or a menu: no activation key is coming.
     this.activationKeyPending = false
@@ -453,6 +460,10 @@ export class FilletTool implements Tool {
   }
 
   onKey(ev: KeyboardEvent): void {
+    try { this.handleKey(ev) } finally { this.c.publishDimension() }
+  }
+
+  private handleKey(ev: KeyboardEvent): void {
     if (this.typingElsewhere()) return
     const key = ev.key
     if (key === 'Alt' || key === 'Shift' || key === 'Control' || key === 'Meta') return
@@ -476,7 +487,7 @@ export class FilletTool implements Tool {
 
     if (s.kind === 'armed') {
       if (key === 'Enter') {
-        this.c.size.enterOnArmed(s)
+        this.completeOperation()
         return
       }
       if (key === 'Tab') {
@@ -509,7 +520,7 @@ export class FilletTool implements Tool {
         }
       }
       if (key === 'Enter') {
-        this.c.edit.enterOnEdit(s)
+        this.completeOperation()
         return
       }
       if (isCurveInputKey(key)) {
@@ -558,7 +569,24 @@ export class FilletTool implements Tool {
     return this.c.heldGripLabel() ?? profileSizeLabel(getFilletSettings().profile)
   }
 
+  /** Shared by viewport Enter and the card; field/grip semantics stay in the stages. */
+  private completeOperation(): void {
+    this.activationKeyPending = false
+    this.c.note = null
+    const s = this.c.stage
+    if (s.kind === 'armed') this.c.size.enterOnArmed(s)
+    else if (s.kind === 'edit') this.c.edit.enterOnEdit(s)
+  }
+
   private escape(): void {
+    this.activationKeyPending = false
+    this.c.note = null
+    this.c.pendingMove = null
+    this.escapeOperation()
+    this.c.publishDimension()
+  }
+
+  private escapeOperation(): void {
     const s = this.c.stage
     if (s.kind !== 'idle') {
       this.resetStage()
@@ -579,6 +607,7 @@ export class FilletTool implements Tool {
 
   cancel(): void {
     disconnectFilletDimension(this.dimension)
+    disconnectFilletActions(this.actions)
     setFilletMeasurementLabelOverride(null)
     this.c.note = null
     // A move still queued would hover again on a tool that is gone.

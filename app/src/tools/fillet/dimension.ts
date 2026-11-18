@@ -96,6 +96,7 @@ export class FilletDimension implements DimensionSource {
     s.grab = null
     s.pressArm = false
     this.c.dimensionEditing = true
+    this.c.publishDimension()
     const apply = (): void => {
       scheduled = false
       if (!valid() || pending === null) return
@@ -140,7 +141,7 @@ export class FilletDimension implements DimensionSource {
           this.c.measure(this.c.size.gripReadout(s))
         }
         close()
-        this.publish()
+        this.c.publishDimension()
       },
       cancel: () => {
         if (valid()) {
@@ -157,7 +158,7 @@ export class FilletDimension implements DimensionSource {
           this.c.hooks.requestRender()
         }
         close()
-        this.publish()
+        this.c.publishDimension()
       },
     }
   }

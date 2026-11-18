@@ -14,6 +14,8 @@ it('mounts the Fillet card only for its active tool in Preview', async () => {
   expect(screen.getByRole('region', { name: 'Fillet options' })).toBeVisible()
   expect(screen.queryByRole('button', { name: /(?:Collapse|Expand) Fillet options/ })).toBeNull()
   expect(screen.getByRole('button', { name: 'About Fillet' })).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Apply Fillet' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
 })
 
 it('exposes no Fillet card in production', async () => {

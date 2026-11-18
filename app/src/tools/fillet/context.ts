@@ -22,6 +22,8 @@ import type { EditStageOps } from './edit'
 
 export class FilletContext {
   stage: Stage = { kind: 'idle' }
+  previewReady = false
+  previewFailed = false
   dimensionEditing = false
   publishDimension: () => void = () => {}
 

@@ -142,6 +142,7 @@ export class PreviewStage {
     // preview did to the radius.
     if (s.active.kind !== 'radius') this.c.measure(s.gripTyped === '' ? this.c.size.gripReadout(s) : typedReadout(s.gripTyped))
     if (this.c.slowSkipped && this.c.statusLine === null) this.c.statusLine = SLOW_PREVIEW_HINT
+    this.c.previewReady = !this.c.previewFailed && !this.c.slowSkipped
     setFilletThreeWayCorners(corners)
     this.c.publishDimension()
   }
@@ -150,7 +151,11 @@ export class PreviewStage {
    *  is dropped, and its answer will not be applied. Returns the round's id. */
   startRound(): number {
     this.c.previewer.cancel()
-    return ++this.c.epoch
+    this.c.previewReady = false
+    this.c.previewFailed = false
+    const epoch = ++this.c.epoch
+    this.c.publishDimension()
+    return epoch
   }
 
   /** A target held at `max`: the tightest clamp among the targets is the
@@ -265,6 +270,7 @@ export class PreviewStage {
       // that rolls a ball around a junction, a seam through a curve): its
       // "can't blend this corner" is not the commit's answer, so it is not
       // said. A typed preview or a commit that refuses still says it.
+      this.c.previewFailed = true
       const quickOnly = !typed && r.code === 'UnsupportedVertex'
       if (!quickOnly) this.c.statusLine = this.refusalText(r.message)
       this.releaseMask(t.object)
@@ -357,7 +363,7 @@ export class PreviewStage {
       poly = chamferedCornerPolyline(t.geom, sized.a, sized.b, t.corner.normal)
       if (poly === null) this.c.statusLine = cornerLimitText(t, sized.kind)
     }
-    if (poly === null || poly.length < 2) return
+    if (poly === null || poly.length < 2) { this.c.previewFailed = true; return }
     const flat: number[] = []
     for (let i = 0; i + 1 < poly.length; i++) flat.push(...poly[i], ...poly[i + 1])
     const line = makeFatSegments(flat, { ...PREVIEW_LINE_STYLE, color: RAIL_COLOR, widthPx: 3 })

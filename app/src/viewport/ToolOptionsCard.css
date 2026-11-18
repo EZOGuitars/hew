@@ -76,3 +76,10 @@
 .fillet-sensitivity button { flex: 1; min-width: 0; min-height: 26px; padding: 3px; font: inherit; color: var(--text-primary); background: transparent; border: 1px solid var(--border-strong); border-radius: var(--radius-control, 7px); cursor: pointer; }
 .fillet-sensitivity button[aria-pressed="true"] { background: var(--accent-base); color: var(--text-on-accent, #fff); }
 .fillet-sensitivity button:focus-visible { outline: 2px solid var(--accent-base); outline-offset: 1px; }
+.tool-options-footer { flex-shrink: 0; padding: 10px 12px 12px; border-top: 1px solid var(--border-strong); }
+.fillet-actions { display: flex; gap: 6px; }
+.fillet-actions button { display: inline-flex; justify-content: center; align-items: center; gap: 4px; flex: 1; min-width: 0; min-height: 32px; padding: 6px; border: 1px solid var(--border-strong); border-radius: var(--radius-control, 7px); background: var(--surface-input); color: var(--text-primary); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.fillet-actions .fillet-apply { background: var(--accent-base); color: var(--text-on-accent, #fff); border-color: var(--accent-base); }
+.fillet-actions button:disabled { opacity: 0.5; cursor: default; }
+.fillet-actions button:focus-visible { outline: 2px solid var(--accent-base); outline-offset: 2px; }
+.fillet-action-hint { display: block; margin-top: 5px; font-size: 11px; color: var(--text-secondary); }

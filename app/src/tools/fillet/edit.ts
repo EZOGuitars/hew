@@ -119,6 +119,8 @@ export class EditStageOps {
           this.c.statusLine = limitedSentence('Radius', r.maxSize * s.frame.scale, r.limitedBy, formatLengthLimit)
         }
         this.c.preview.drawResult(s.object, s.frame, r, clamped)
+        this.c.previewReady = true
+        this.c.publishDimension()
       },
     )
     // A late answer repaints outside any event; a direct one rides the event.
